@@ -1,6 +1,7 @@
 {
     "name": "jbizzay/magma",
-    "description": "",
+    "description": "Laravel package for creating powerful and dynamic controllers",
+    "keywords": ["laravel", "eloquent"],
     "authors": [
         {
             "name": "Jason Kuchynka",
