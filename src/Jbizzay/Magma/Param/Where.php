@@ -2,9 +2,9 @@
 
 class Where extends AbstractParam {
   
-  public static function query($query, $column, $value = null)
+  public static function query($query, $column, $value = null, $operator = '=')
   {
-    $query->where($column, $value);
+    $query->where($column, $operator, $value);
   }
 
 }

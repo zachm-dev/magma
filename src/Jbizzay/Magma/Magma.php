@@ -3,6 +3,8 @@
 use Illuminate\Support\Facades\Input;
 use Illuminate\Support\Facades\Response;
 
+use Confide;
+
 class Magma {
 
     /**
@@ -18,6 +20,40 @@ class Magma {
     ];
 
     /**
+     * Create a new model record
+     * Returns newly created resource in basic form
+     * @param string $model
+     *   A model class e.g. User
+     * @param array $values
+     *   Any values to explictly set and/or override hydration
+     * @return Response
+     */
+    public static function create($model, $values = [])
+    {
+        if ( ! MagmaAccess::access($model, 'create')) {
+            return static::responseAccessDenied();
+        }
+        $input = Input::all();
+        $values = array_merge($input, $values);
+
+        $record = new $model;
+
+        if ($values) {
+            foreach ($values as $key => $value) {
+                if (isset($record->$key)) {
+                    $record->$key = $value;
+                }
+            }
+        }
+
+        if ($record->save()) {
+            static::syncRelations($record, $values);
+            return $record;
+        }
+        return Response::json(['errors' => $record->errors()->all(':message')], 403);
+    }
+
+    /**
      * Delete a model record
      * @param string $model
      *   A model class e.g. User
@@ -27,11 +63,14 @@ class Magma {
      *   Callback function when successful
      * @return Response
      */
-    public static function destroy($model, $id, $onSuccess = null)
+    public static function delete($model, $id, $onSuccess = null)
     {
         $record = static::findRecord($model, $id);
         if ( ! $record) {
             return Response::json(['errors' => [ucwords($model) .' not found']], 403);
+        }
+        if ( ! MagmaAccess::access($record, 'delete')) {
+            return static::responseAccessDenied();
         }
         // Detach from relations
         // Needed if database is not using onDelete cascade
@@ -78,22 +117,17 @@ class Magma {
         return null;
     }
 
-    /**
-     * Find a model record
-     * Use Input to do some more magic
-     * @param string $model
-     *   A model class e.g. User
-     * @param integer $id
-     *   ID of the model
-     * @return Response
-     */
-    public static function find($model, $id)
+    public static function getModels()
     {
-        $record = static::findRecord($model, $id);
-        if ($record) {
-            return $record;
-        }
-        return Response::json(['errors' => [ucwords($model) .' not found']], 403);
+        
+    }
+
+    public static function getModelMeta($modelName)
+    {
+        $meta = [];
+        $model = new $modelName;
+        $meta['table'] = $model->getTable();
+        return $meta;
     }
 
     /**
@@ -122,6 +156,29 @@ class Magma {
         $query = $model::query();
         static::setupQueryFromInput($query);
         return $query->get();
+    }
+
+    /**
+     * Find a model record
+     * Use Input to do some more magic
+     * @param string $model
+     *   A model class e.g. User
+     * @param integer $id
+     *   ID of the model
+     * @return Response
+     */
+    public static function read($model, $id)
+    {
+        $record = static::findRecord($model, $id);
+        if ($record) {
+            return $record;
+        }
+        return Response::json(['errors' => [ucwords($model) .' not found']], 403);
+    }
+
+    protected static function responseAccessDenied()
+    {
+        return Response::json(['errors' => ["Access Denied"]], 401);
     }
 
     /**
@@ -179,38 +236,6 @@ class Magma {
     }
 
     /**
-     * Create a new model record
-     * Returns newly created resource in basic form
-     * @param string $model
-     *   A model class e.g. User
-     * @param array $values
-     *   Any values to explictly set and/or override hydration
-     * @return Response
-     */
-    public static function store($model, $values = [])
-    {
-
-        $input = Input::all();
-        $values = array_merge($input, $values);
-
-        $record = new $model;
-
-        if ($values) {
-            foreach ($values as $key => $value) {
-                if (isset($record->$key)) {
-                    $record->$key = $value;
-                }
-            }
-        }
-
-        if ($record->save()) {
-            static::syncRelations($record, $values);
-            return $record;
-        }
-        return Response::json(['errors' => $record->errors()->all(':message')], 403);
-    }
-
-    /**
      * Update a model record
      * Returns updated resource in basic form
      * @param string $model
@@ -228,9 +253,11 @@ class Magma {
         $values = array_merge($input, $values);
 
         $record = $model::find($id);
+
         if ( ! $record) {
             return Response::json(['errors' => [ucwords($model) .' not found']], 403);
         }
+
         if ($values) {
             foreach ($values as $key => $value) {
                 if (isset($record->$key)) {
@@ -238,6 +265,11 @@ class Magma {
                 }
             }
         }
+
+        if ( ! MagmaAccess::access($record, 'update')) {
+            return static::responseAccessDenied();
+        }
+        
         if ($record->updateUniques()) {
             // Update relations
             static::syncRelations($record, $values);
