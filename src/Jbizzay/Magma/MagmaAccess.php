@@ -25,20 +25,29 @@ class MagmaAccess {
         	if ( ! static::accessRules($model, $model::$accessRules[$action], $action)) {
         		return false;
         	}
-        } else {
-        	return false;
+        }
+        // By default, return true for field level action
+        if ( ! empty($model::$accessRulesFields)) {
+            if ( ! static::accessRulesFields($model, $model::$accessRulesFields, $action)) {
+                return false;
+            }
         }
         return true;
     }
 
-    public static function accessRules($model, $accessRules, $action)
+    /**
+     * Check user access against a model and rules
+     * @return boolean
+     *   True if user can access
+     */
+    public static function accessRules($model, $accessRule, $action)
     {
     	$rules = [];
-    	$accessRules = (array) $accessRules;
+        $allowRoles = (array) $accessRule['roles'];
         $access = false;
         $user = Confide::user();
-        foreach ($accessRules as $key => $rule) {
-            $rules[$rule] = $rule;
+        foreach ($allowRoles as $role) {
+            $rules[$role] = $role;
         }
         // If * is set, this action is open for all
         if (in_array('*', $rules)) {
@@ -57,7 +66,7 @@ class MagmaAccess {
                     unset($rules['owner']);
                 }
             }
-            // Pass the roles set to entrust
+            // Check user has a role set in rule
             if ( ! empty($rules)) {
                 foreach ($rules as $role) {
                     if ($user && $user->hasRole($role)) {
@@ -67,15 +76,26 @@ class MagmaAccess {
                 }
             }
         }
+        return $access;
+    }
 
+    /**
+     * Check user access against a model and field level rules
+     * @return boolean
+     *   True if user can access
+     */
+    public static function accessRulesFields($model, $accessRules, $action)
+    {
+        $access = true;
+        $user = Confide::user();
         // Check field level rules
-        if (in_array($action, ['read', 'update']) && ! empty($model::$accessRules['fields'])) {
+        if (in_array($action, ['read', 'update'])) {
             $dirty = $model->getDirty();
             if ($dirty) {
                 foreach ($dirty as $field => $value) {
-                    if (isset($dirty[$field])) {
+                    if (isset($accessRules[$field])) {
                         $access = false;
-                        $roles = (array) $dirty[$field];
+                        $roles = (array) $accessRules[$field];
                         foreach ($roles as $role) {
                             if ($user && $user->hasRole($role)) {
                                 $access = true;
@@ -86,8 +106,63 @@ class MagmaAccess {
                 }
             }
         }
-
         return $access;
+    }
+
+    /**
+     * Show a list of permissions set on app's models
+     */
+    public static function getAccessRules()
+    {
+        $models = Magma::getModels();
+        $rules = [];
+        $allRoles = \Role::all();
+        $getRoles = function ($roles) use ($allRoles) {
+            $return = [];
+            $roles = (array) $roles;
+            foreach ($roles as $role) {
+                if ($role == '*') {
+                    foreach ($allRoles as $allRole) {
+                        $return[] = $allRole->name;
+                    }
+                } else {
+                    foreach ($allRoles as $allRole) {
+                        if ($allRole->name == $role) {
+                            $return[] = $allRole->name;
+                        }
+                    }
+                }
+            }
+            return $return;
+        };
+        foreach ($models as $model) {
+            // Each model can define their own access rules
+            // Rule name starts with model name for sorting purposes
+            if ( ! empty($model::$accessRules)) {
+                foreach ($model::$accessRules as $key => $rule) {
+                    $rules[] = [
+                        'name' => strtolower($model) . '_' . $key,
+                        'display_name' => $rule['display_name'],
+                        'model' => $model,
+                        'roles' => $getRoles($rule['roles'])
+                    ];
+                }
+            }
+            // Same for field level rules
+            if ( ! empty($model::$fieldAccessRules)) {
+                foreach ($model::$fieldAccessRules as $fieldName => $fieldRules) {
+                    foreach ($fieldRules as $key => $rule) {
+                        $rules[] = [
+                            'name' => strtolower($model) . '_field_' . $key,
+                            'display_name' => $rule['display_name'],
+                            'model' => $model,
+                            'roles' => $getRoles($rule['roles'])
+                        ];
+                    }
+                }
+            }
+        }
+        return $rules;
     }
 
 }

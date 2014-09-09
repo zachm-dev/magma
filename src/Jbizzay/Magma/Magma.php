@@ -117,17 +117,20 @@ class Magma {
         return null;
     }
 
+    /**
+     * Go find all the custom models in the app
+     * @return array
+     *   Models
+     */
     public static function getModels()
     {
-        
-    }
-
-    public static function getModelMeta($modelName)
-    {
-        $meta = [];
-        $model = new $modelName;
-        $meta['table'] = $model->getTable();
-        return $meta;
+        $files = \File::glob(app_path() .'/models/*.php');
+        $models = [];
+        foreach ($files as $file) {
+            preg_match('~/([^/]*).php~', $file, $match);
+            $models[] = $match[1];
+        }
+        return $models;
     }
 
     /**
@@ -204,6 +207,16 @@ class Magma {
     }
 
     /**
+     * Sync everything with the database
+     * @todo: Let models declare their schema and sync here
+     * @todo: Call MagmaAccess::sync to sync permissions
+     */
+    public static function syncDatabase()
+    {
+
+    }
+
+    /**
      * Update/create a model record's relations
      * This handles syncing, so whatever is passed here will
      * be the atomic value of the relation
@@ -224,8 +237,14 @@ class Magma {
 
                         break;
                         case 'belongsToMany':
+                            $syncValues = [];
+                            foreach ($values[$name] as $key => $value) {
+                                if ($value) {
+                                    $syncValues[] = $value;
+                                }
+                            }
                             // Input should be an array of ids, do sync
-                            $record->$name()->sync($values[$name]);
+                            $record->$name()->sync($syncValues);
                         break;
                     }
                     // Make sure the updated relation is set on the model
@@ -269,7 +288,7 @@ class Magma {
         if ( ! MagmaAccess::access($record, 'update')) {
             return static::responseAccessDenied();
         }
-        
+
         if ($record->updateUniques()) {
             // Update relations
             static::syncRelations($record, $values);
