@@ -149,11 +149,11 @@ class MagmaAccess {
                 }
             }
             // Same for field level rules
-            if ( ! empty($model::$fieldAccessRules)) {
-                foreach ($model::$fieldAccessRules as $fieldName => $fieldRules) {
+            if ( ! empty($model::$accessRulesFields)) {
+                foreach ($model::$accessRulesFields as $fieldName => $fieldRules) {
                     foreach ($fieldRules as $key => $rule) {
                         $rules[] = [
-                            'name' => strtolower($model) . '_field_' . $key,
+                            'name' => strtolower($model) . '_field_' . $fieldName . '_' . $key,
                             'display_name' => $rule['display_name'],
                             'model' => $model,
                             'roles' => $getRoles($rule['roles'])
