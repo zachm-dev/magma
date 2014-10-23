@@ -28,7 +28,7 @@ class Magma {
      *   Any values to explictly set and/or override hydration
      * @return Response
      */
-    public static function create($model, $values = [])
+    public static function create($model, $values = [], $onSuccess = null)
     {
         if ( ! MagmaAccess::access($model, 'create')) {
             return static::responseAccessDenied();
@@ -48,6 +48,9 @@ class Magma {
 
         if ($record->save()) {
             static::syncRelations($record, $values);
+            if ($onSuccess) {
+                $onSuccess($record);
+            }
             return $record;
         }
         return Response::json(['errors' => $record->errors()->all(':message')], 403);
@@ -245,10 +248,10 @@ class Magma {
                             }
                             // Input should be an array of ids, do sync
                             $record->$name()->sync($syncValues);
+                            // Make sure the updated relation is set on the model
+                            $record->$name;
                         break;
                     }
-                    // Make sure the updated relation is set on the model
-                    $record->$name;
                 }
             }
         }
