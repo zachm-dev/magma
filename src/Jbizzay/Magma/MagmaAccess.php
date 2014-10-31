@@ -52,6 +52,9 @@ class MagmaAccess {
         // If * is set, this action is open for all
         if (in_array('*', $rules)) {
             $access = true;
+        // If authed is set, and the user is logged in
+        } else if (in_array('authed', $rules) && ! empty ($user->id)) {
+            $access = true;
         } else {
             // If user owns this model and owner rule is set, allow
             if (in_array('owner', $rules)) {
