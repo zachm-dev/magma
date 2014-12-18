@@ -39,12 +39,23 @@ class Magma {
         $record = new $model;
 
         if ($values) {
+            $relations = static::getRelations($record);
+            // If belongsTo and passing an object, get the id of relation
+            if ($relations) {
+                foreach ($relations as $key => $relation) {
+                    if ( ! empty($values[$key]['id'])) {
+                        $values[$key] = $values[$key]['id'];
+                    }
+                }
+            }
             foreach ($values as $key => $value) {
                 if (isset($record->$key)) {
                     $record->$key = $value;
                 }
             }
         }
+
+
 
         if ($record->save()) {
             static::syncRelations($record, $values);
@@ -145,7 +156,7 @@ class Magma {
         $relations = $model::$relationsData;
         return $relations;
     }
-  
+
     /**
      * Query a model
      * Uses Input to do magic
@@ -236,6 +247,9 @@ class Magma {
                         case 'hasOne':
 
                         break;
+                        case 'belongsTo':
+
+                        break;
                         case 'belongsToMany':
                             $syncValues = [];
                             foreach ($values[$name] as $key => $value) {
@@ -278,6 +292,16 @@ class Magma {
         }
 
         if ($values) {
+            $relations = static::getRelations($record);
+            // If belongsTo and passing an object, get the id of relation
+            if ($relations) {
+                foreach ($relations as $key => $relation) {
+                    if ( ! empty($values[$key]['id'])) {
+                        $values[$key] = $values[$key]['id'];
+                    }
+                }
+            }
+
             foreach ($values as $key => $value) {
                 if (isset($record->$key)) {
                     $record->$key = $value;
@@ -292,7 +316,7 @@ class Magma {
         if ($record->updateUniques()) {
             // Update relations
             static::syncRelations($record, $values);
-            
+
             if ($onSuccess) {
                 // If success callback returns something, return that instead of record
                 $return = $onSuccess($record);
