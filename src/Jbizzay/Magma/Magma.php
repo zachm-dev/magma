@@ -43,14 +43,16 @@ class Magma {
 
         $input = Input::all();
         if ($input) {
+            $fill = [];
             foreach ($input as $key => $value) {
                 if ($relations && isset($relations[$key])) {
                     continue;
                 }
                 if (MagmaAccess::accessField($record, 'create', $key)) {
-                    $record->$key = $value;
+                    $fill[$key] = $value;
                 }
             }
+            $record->fill($fill);
         }
 
         if ( ! empty($values)) {
@@ -339,14 +341,17 @@ class Magma {
 
         $input = Input::all();
         if ($input) {
+            $fill = [];
             foreach ($input as $key => $value) {
                 if ($relations && isset($relations[$key])) {
                     continue;
                 }
+
                 if (MagmaAccess::accessField($record, 'update', $key)) {
-                    $record->$key = $value;
+                    $fill[$key] = $value;
                 }
             }
+            $record->fill($fill);
         }
 
         if ($values) {
