@@ -2,84 +2,107 @@
 
 use Confide;
 
+/**
+ * Controls access to:
+ * CRUD operations on models
+ * CRUD operations on model fields
+ * CRUD operations on model relations
+ * Rules include * (open to all), authed, unauthed, owner
+ * and user roles
+ *
+ * Access is false by default if model::$accessRules is defined.
+ * Access must be explicitly granted.
+ *
+ */
 class MagmaAccess {
-	
-	/**
+
+    /**
      * Determine if user has access to perform action on a model
+     * @param string|object $model
+     *   Model string or loaded model record
+     * @param string $action
+     *   create, read, update, delete
+     * @return boolean
+     *   Whether user has access
      */
     public static function access($model, $action)
     {
-        $access = false;
-        // Check if should skip access check
-        if ( ! empty($GLOBALS['MAGMA_SKIP_ACCESS'])) {
+        if ( ! isset($model::$accessRules)) {
             return true;
         }
-        // If user is super user, allow
+        // Get current user
         $user = Confide::user();
-        if ($user && $user->username == 'admin') {
-        	return true;
+        // Check CRUD rules
+        if ( ! empty($model::$accessRules[$action]['roles'])) {
+            return static::accessRules($model, $model::$accessRules[$action]['roles']);
         }
-        // By default, return false for an action / permission
-        // It must be explicitly granted
-        if ( ! empty($model::$accessRules[$action])) {
-        	if ( ! static::accessRules($model, $model::$accessRules[$action], $action)) {
-        		return false;
-        	}
+        return false;
+    }
+
+    /**
+     * Determine if user has access to a field or relation
+     * Only applies to Create, Read and Update
+     */
+    public static function accessField($model, $action, $field)
+    {
+        if ( ! isset($model::$accessRules)) {
+            return true;
         }
-        // By default, return true for field level action
-        if ( ! empty($model::$accessRulesFields)) {
-            if ( ! static::accessRulesFields($model, $model::$accessRulesFields, $action)) {
-                return false;
-            }
+        // Get current user
+        $user = Confide::user();
+        if ( ! empty($model::$accessRules['fields'][$field][$action])) {
+            // Field level access is defined, by default will return false
+            // Check field action rules
+            return static::accessRules($model, $model::$accessRules['fields'][$field][$action]['roles']);
         }
         return true;
     }
 
-    /**
-     * Check user access against a model and rules
-     * @return boolean
-     *   True if user can access
-     */
-    public static function accessRules($model, $accessRule, $action)
+    protected static function accessRules($model, $rules)
     {
-    	$rules = [];
-        $allowRoles = (array) $accessRule['roles'];
-        $access = false;
         $user = Confide::user();
-        foreach ($allowRoles as $role) {
-            $rules[$role] = $role;
-        }
-        // If * is set, this action is open for all
+        $rules = (array) $rules;
+        // If * is set, this action is permitted for all
         if (in_array('*', $rules)) {
-            $access = true;
+            return true;
+        }
         // If authed is set, and the user is logged in
-        } else if (in_array('authed', $rules) && ! empty ($user->id)) {
-            $access = true;
-        } else {
-            // If user owns this model and owner rule is set, allow
-            if (in_array('owner', $rules)) {
-                if ($model->getTable() == 'users') {
-                    $ownerField = 'id';
-                } else {
-                    $ownerField = 'user_id';
-                }
-                if ($user && ! empty($model->$ownerField) && ($model->$ownerField == $user->id)) {
-                    $access = true;
-                } else {
-                    unset($rules['owner']);
-                }
-            }
-            // Check user has a role set in rule
-            if ( ! empty($rules)) {
-                foreach ($rules as $role) {
-                    if ($user && $user->hasRole($role)) {
-                        $access = true;
-                        break;
-                    }
+        if (in_array('authed', $rules) && $user && ! empty($user->id)) {
+            return true;
+        }
+        // If unauthed is set, and the user is not logged in
+        if (in_array('unauthed', $rules) && (! $user || empty($user->id))) {
+            return true;
+        }
+        // If user is the owner of this record
+        if (in_array('owner', $rules) && $user && static::userOwnsRecord($model, $user)) {
+            return true;
+        }
+        // If user has role
+        if ($user && $user->id) {
+            foreach ($rules as $role) {
+                if ($user->hasRole($role)) {
+                    return true;
                 }
             }
         }
-        return $access;
+        return false;
+    }
+
+    /**
+     * Determine whether a user is the owner of a record
+     */
+    public static function userOwnsRecord($model, $user)
+    {
+        if ($model->getTable() == 'users') {
+            $ownerField = 'id';
+        } else {
+            $ownerField = 'user_id';
+        }
+        if ($user && ! empty($model->$ownerField) && ($model->$ownerField == $user->id)) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -96,9 +119,9 @@ class MagmaAccess {
             $dirty = $model->getDirty();
             if ($dirty) {
                 foreach ($dirty as $field => $value) {
-                    if (isset($accessRules[$field])) {
+                    if (isset($accessRules[$field][$action])) {
                         $access = false;
-                        $roles = (array) $accessRules[$field];
+                        $roles = (array) $accessRules[$field][$action]['roles'];
                         foreach ($roles as $role) {
                             if ($user && $user->hasRole($role)) {
                                 $access = true;
@@ -143,17 +166,19 @@ class MagmaAccess {
             // Rule name starts with model name for sorting purposes
             if ( ! empty($model::$accessRules)) {
                 foreach ($model::$accessRules as $key => $rule) {
-                    $rules[] = [
-                        'name' => strtolower($model) . '_' . $key,
-                        'display_name' => $rule['display_name'],
-                        'model' => $model,
-                        'roles' => $getRoles($rule['roles'])
-                    ];
+                    if (isset($rules['display_name'])) {
+                        $rules[] = [
+                            'name' => strtolower($model) . '_' . $key,
+                            'display_name' => $rule['display_name'],
+                            'model' => $model,
+                            'roles' => $getRoles($rule['roles'])
+                        ];
+                    }
                 }
             }
             // Same for field level rules
-            if ( ! empty($model::$accessRulesFields)) {
-                foreach ($model::$accessRulesFields as $fieldName => $fieldRules) {
+            if (isset($model::$accessRules) && ! empty($model::$accessRules['fields'])) {
+                foreach ($model::$accessRules['fields'] as $fieldName => $fieldRules) {
                     foreach ($fieldRules as $key => $rule) {
                         $rules[] = [
                             'name' => strtolower($model) . '_field_' . $fieldName . '_' . $key,

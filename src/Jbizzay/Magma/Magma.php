@@ -33,32 +33,35 @@ class Magma {
         if ( ! MagmaAccess::access($model, 'create')) {
             return static::responseAccessDenied();
         }
-        $input = Input::all();
-        $values = array_merge($input, $values);
-
         $record = new $model;
 
-        if ($values) {
-            $relations = static::getRelations($record);
-            // If belongsTo and passing an object, get the id of relation
-            if ($relations) {
-                foreach ($relations as $key => $relation) {
-                    if ( ! empty($values[$key]['id'])) {
-                        $values[$key] = $values[$key]['id'];
-                    }
+        $record->autoHydrateEntityFromInput = false;
+        $record->forceEntityHydrationFromInput = false;
+        $record->autoPurgeRedundantAttributes = true;
+
+        $relations = static::getRelations($record);
+
+        $input = Input::all();
+        if ($input) {
+            foreach ($input as $key => $value) {
+                if ($relations && isset($relations[$key])) {
+                    continue;
                 }
-            }
-            foreach ($values as $key => $value) {
-                if (isset($record->$key)) {
+                if (MagmaAccess::accessField($record, 'create', $key)) {
                     $record->$key = $value;
                 }
             }
         }
 
-
+        if ( ! empty($values)) {
+            foreach ($values as $key => $value) {
+                $record->$key = $value;
+            }
+        }
+        $values = array_merge($input, $values);
 
         if ($record->save()) {
-            static::syncRelations($record, $values);
+            static::syncRelations($record, $values, 'create');
             if ($onSuccess) {
                 $onSuccess($record);
             }
@@ -188,6 +191,22 @@ class Magma {
     {
         $record = static::findRecord($model, $id);
         if ($record) {
+
+            $attrs = $record->getAttributes();
+            foreach ($attrs as $key => $value) {
+                if ( ! MagmaAccess::accessField($record, 'read', $key)) {
+                    unset($record->$key);
+                }
+            }
+            $relations = static::getRelations($record);
+            if ($relations) {
+                foreach ($relations as $key => $value) {
+                    if ( ! MagmaAccess::accessField($record, 'read', $key)) {
+                        unset($record->$key);
+                    }
+                }
+            }
+
             return $record;
         }
         return Response::json(['errors' => [ucwords($model) .' not found']], 403);
@@ -240,11 +259,27 @@ class Magma {
      *   Input values to search for relations
      * @return void
      */
-    public static function syncRelations($record, $values)
+    public static function syncRelations($record, $values, $action)
     {
         $relations = static::getRelations($record);
         if ($relations) {
             foreach ($relations as $name => $relation) {
+                // Check user has access to perform operation on relation
+                if (in_array($action, ['create', 'update'])) {
+                    $user = Confide::user();
+                    if (isset($record::$accessRules) && ! empty($record::$accessRules['fields']) && ! empty($record::$accessRules['fields'][$name][$action])) {
+                        $access = false;
+                        $roles = (array) $record::$accessRules['fields'][$name][$action]['roles'];
+                        foreach ($roles as $role) {
+                            if ($user && $user->hasRole($role)) {
+                                $access = true;
+                            }
+                        }
+                        if ( ! $access) {
+                            continue;
+                        }
+                    }
+                }
                 if (isset($values[$name])) {
                     switch ($relation[0]) {
                         case 'hasOne':
@@ -256,7 +291,13 @@ class Magma {
                         case 'belongsToMany':
                             $syncValues = [];
                             foreach ($values[$name] as $key => $value) {
-                                if ($value) {
+                                if ( ! empty($value[0]['id'])) {
+                                    foreach ($value as $relValue) {
+                                        $syncValues[] = $relValue['id'];
+                                    }
+                                } elseif ( ! empty($value['id'])) {
+                                    $syncValues[] = $value['id'];
+                                } elseif ($value) {
                                     $syncValues[] = $value;
                                 }
                             }
@@ -284,33 +325,37 @@ class Magma {
      */
     public static function update($model, $id, $values = [], $onSuccess = null)
     {
-
-        $input = Input::all();
-        $values = array_merge($input, $values);
-
         $record = $model::find($id);
 
         if ( ! $record) {
             return Response::json(['errors' => [ucwords($model) .' not found']], 403);
         }
 
-        if ($values) {
-            $relations = static::getRelations($record);
-            // If belongsTo and passing an object, get the id of relation
-            if ($relations) {
-                foreach ($relations as $key => $relation) {
-                    if ( ! empty($values[$key]['id'])) {
-                        $values[$key] = $values[$key]['id'];
-                    }
-                }
-            }
+        $record->autoHydrateEntityFromInput = false;
+        $record->forceEntityHydrationFromInput = false;
+        $record->autoPurgeRedundantAttributes = true;
 
-            foreach ($values as $key => $value) {
-                if (isset($record->$key)) {
+        $relations = static::getRelations($record);
+
+        $input = Input::all();
+        if ($input) {
+            foreach ($input as $key => $value) {
+                if ($relations && isset($relations[$key])) {
+                    continue;
+                }
+                if (MagmaAccess::accessField($record, 'update', $key)) {
                     $record->$key = $value;
                 }
             }
         }
+
+        if ($values) {
+            foreach ($values as $key => $value) {
+                $record->$key = $value;
+            }
+        }
+
+        $values = array_merge($input, $values);
 
         if ( ! MagmaAccess::access($record, 'update')) {
             return static::responseAccessDenied();
@@ -318,7 +363,7 @@ class Magma {
 
         if ($record->updateUniques()) {
             // Update relations
-            static::syncRelations($record, $values);
+            static::syncRelations($record, $values, 'update');
 
             if ($onSuccess) {
                 // If success callback returns something, return that instead of record
