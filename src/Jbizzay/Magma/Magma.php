@@ -177,7 +177,22 @@ class Magma {
     {
         $query = $model::query();
         static::setupQueryFromInput($query);
-        return $query->get();
+        // Find out what fields shouldn't be accessed
+        // @todo: This won't work for owner rule, but that might be ok for now
+        $hidden = [];
+        if ( ! empty($model::$accessRules['fields'])) {
+            foreach ($model::$accessRules['fields'] as $fieldName => $rules) {
+                if ( ! MagmaAccess::accessField($model, 'read', $fieldName)) {
+                    $hidden[] = $fieldName;
+                }
+            }
+        }
+        return $query->get()->each(function ($record) use ($hidden) {
+            // Do authorization of read fields
+            if ($hidden) {
+                $record->setHidden($hidden);
+            }
+        });
     }
 
     /**
