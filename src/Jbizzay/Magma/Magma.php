@@ -299,10 +299,21 @@ class Magma {
                         }
                     }
                 }
-                if (isset($values[$name])) {
+                if (array_key_exists($name, $values)) {
                     switch ($relation[0]) {
                         case 'hasOne':
-
+                            if ( ! empty($values[$name]['id'])) {
+                                $record->$name = $values[$name]['id'];
+                            } elseif ( ! empty($values[$name])) {
+                                $record->$name = $values[$name];
+                            } else {
+                                $record->$name = null;
+                            }
+                            $record->updateUniques();
+                            if ( ! empty($record->$name)) {
+                                // Emulate "with" return object
+                                $record->$name = $record->$name()->find($record->$name);
+                            }
                         break;
                         case 'belongsTo':
 
@@ -357,6 +368,7 @@ class Magma {
         $relations = static::getRelations($record);
 
         $input = Input::all();
+
         if ($input) {
             $fill = [];
             foreach ($input as $key => $value) {
