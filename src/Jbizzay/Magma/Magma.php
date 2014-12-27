@@ -177,18 +177,18 @@ class Magma {
     {
         $query = $model::query();
         static::setupQueryFromInput($query);
-        // Find out what fields shouldn't be accessed
-        // @todo: This won't work for owner rule, but that might be ok for now
-        $hidden = [];
-        if (isset($model::$accessRules) && ! empty($model::$accessRules['fields'])) {
-            foreach ($model::$accessRules['fields'] as $fieldName => $rules) {
-                if ( ! MagmaAccess::accessField($model, 'read', $fieldName)) {
-                    $hidden[] = $fieldName;
+        return $query->get()->each(function ($record) {
+            // Do authorization of read fields
+            // @todo: This isn't the most efficient for large datasets, but doing it
+            // here for now because of owner rule
+            $hidden = [];
+            if (isset($record::$accessRules) && ! empty($record::$accessRules['fields'])) {
+                foreach ($record::$accessRules['fields'] as $fieldName => $rules) {
+                    if ( ! MagmaAccess::accessField($record, 'read', $fieldName)) {
+                        $hidden[] = $fieldName;
+                    }
                 }
             }
-        }
-        return $query->get()->each(function ($record) use ($hidden) {
-            // Do authorization of read fields
             if ($hidden) {
                 $origHidden = $record->getHidden();
                 $hidden = array_merge($origHidden, $hidden);

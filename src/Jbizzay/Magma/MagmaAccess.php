@@ -94,6 +94,9 @@ class MagmaAccess {
      */
     public static function userOwnsRecord($model, $user)
     {
+        if ( ! is_object($model)) {
+            return false;
+        }
         if ($model->getTable() == 'users') {
             $ownerField = 'id';
         } else {
